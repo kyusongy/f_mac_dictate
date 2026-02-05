@@ -1,0 +1,8 @@
+rumps
+pynput
+sounddevice
+numpy
+httpx
+python-dotenv
+pyobjc-framework-Cocoa
+pyobjc-framework-Quartz
