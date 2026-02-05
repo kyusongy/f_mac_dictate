@@ -5,6 +5,10 @@ import sounddevice as sd
 from config import SAMPLE_RATE, MIN_DURATION
 
 
+class RecordingTooShort(Exception):
+    pass
+
+
 class Recorder:
     def __init__(self):
         self.frames = []
@@ -26,8 +30,8 @@ class Recorder:
         )
         self.stream.start()
 
-    def stop(self) -> bytes | None:
-        """Stop recording and return WAV bytes, or None if too short."""
+    def stop(self) -> bytes:
+        """Stop recording and return WAV bytes. Raises RecordingTooShort if too brief."""
         self.recording = False
         if self.stream:
             self.stream.stop()
@@ -35,13 +39,13 @@ class Recorder:
             self.stream = None
 
         if not self.frames:
-            return None
+            raise RecordingTooShort()
 
         audio = np.concatenate(self.frames, axis=0)
         duration = len(audio) / SAMPLE_RATE
 
         if duration < MIN_DURATION:
-            return None
+            raise RecordingTooShort()
 
         # Convert to WAV bytes
         buf = io.BytesIO()

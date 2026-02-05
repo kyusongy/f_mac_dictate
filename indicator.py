@@ -11,10 +11,15 @@ from AppKit import (
     NSVisualEffectView,
     NSVisualEffectMaterialHUDWindow,
     NSVisualEffectBlendingModeBehindWindow,
-    NSView,
     NSFontWeightMedium,
 )
 from Foundation import NSMakeRect
+
+DOT_COLORS = {
+    "red": NSColor.redColor,
+    "orange": NSColor.orangeColor,
+    "yellow": NSColor.yellowColor,
+}
 
 
 class Indicator:
@@ -55,7 +60,7 @@ class Indicator:
         blur.layer().setCornerRadius_(corner_radius)
         blur.layer().setMasksToBounds_(True)
 
-        # Red dot indicator
+        # Dot indicator
         self.dot = NSTextField.alloc().initWithFrame_(NSMakeRect(14, 9, 14, 14))
         self.dot.setStringValue_("●")
         self.dot.setBezeled_(False)
@@ -98,10 +103,11 @@ class Indicator:
     def hide(self):
         self.window.orderOut_(None)
 
-    def set_text(self, text: str):
+    def set_text(self, text: str, color: str | None = None):
         self.label.setStringValue_(text)
-        # Red for recording, orange for processing
-        if "Recording" in text:
+        if color and color in DOT_COLORS:
+            self.dot.setTextColor_(DOT_COLORS[color]())
+        elif "Recording" in text:
             self.dot.setTextColor_(NSColor.redColor())
         else:
             self.dot.setTextColor_(NSColor.orangeColor())

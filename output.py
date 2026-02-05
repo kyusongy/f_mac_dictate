@@ -17,7 +17,7 @@ def paste_text(text: str):
     pb.setString_forType_(text, NSStringPboardType)
 
     # Small delay for clipboard to settle
-    time.sleep(0.05)
+    time.sleep(0.075)
 
     # Simulate Cmd+V (key code 9 = 'v')
     key_down = CGEventCreateKeyboardEvent(None, 9, True)

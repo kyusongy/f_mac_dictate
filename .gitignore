@@ -24,5 +24,8 @@ build/
 # Test artifacts
 *.wav
 
+# App bundle
+*.app
+
 # Internal docs
 SPEC.md

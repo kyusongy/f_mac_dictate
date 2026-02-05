@@ -1,11 +1,12 @@
 import threading
 import rumps
 from AppKit import NSObject
-from recorder import Recorder
-from transcriber import get_transcriber
+from recorder import Recorder, RecordingTooShort
+from transcriber import get_transcriber, TranscriptionError
 from output import paste_text, play_success_sound
 from indicator import Indicator
 from hotkey import HotkeyListener
+from config import HOTKEY
 
 
 class Delegate(NSObject):
@@ -22,6 +23,10 @@ class Delegate(NSObject):
             self.app._stop_recording()
         elif self.pending_action == "finish":
             self.app._finish(self.pending_text)
+        elif self.pending_action == "error":
+            self.app._show_error(self.pending_text)
+        elif self.pending_action == "hide":
+            self.app._hide_indicator()
 
 
 delegate = Delegate.alloc().init()
@@ -38,6 +43,9 @@ def run_on_main(action, text=None):
 class DictateApp(rumps.App):
     def __init__(self):
         super().__init__("Dictate", "○", quit_button=None)
+        hotkey_item = rumps.MenuItem(f"Hotkey: {HOTKEY}")
+        hotkey_item.set_callback(None)
+        self.menu = [hotkey_item, None, rumps.MenuItem("Quit", callback=self._quit)]
         self.recorder = Recorder()
         self.transcriber = get_transcriber()
         self.indicator = None
@@ -67,18 +75,22 @@ class DictateApp(rumps.App):
         if self.indicator:
             self.indicator.set_text("Processing")
 
-        audio = self.recorder.stop()
-
-        if audio is None:
+        try:
+            audio = self.recorder.stop()
+        except RecordingTooShort:
             self.title = "○"
-            if self.indicator:
-                self.indicator.hide()
             self.processing = False
+            if self.indicator:
+                self.indicator.set_text("Too short", color="yellow")
+                threading.Timer(1.5, lambda: run_on_main("hide")).start()
             return
 
         def transcribe_and_paste():
-            text = self.transcriber.transcribe(audio)
-            run_on_main("finish", text)
+            try:
+                text = self.transcriber.transcribe(audio)
+                run_on_main("finish", text)
+            except TranscriptionError as e:
+                run_on_main("error", str(e))
 
         threading.Thread(target=transcribe_and_paste, daemon=True).start()
 
@@ -89,14 +101,25 @@ class DictateApp(rumps.App):
         text = text.strip() if text else ""
         if text:
             paste_text(text)
-            if not text.startswith("[Transcription failed"):
-                play_success_sound()
+            play_success_sound()
         self.processing = False
 
-    @rumps.clicked("Quit")
-    def quit_app(self, _):
+    def _show_error(self, message: str):
+        self.title = "○"
+        self.processing = False
+        if self.indicator:
+            self.indicator.set_text(message, color="yellow")
+            self.indicator.show()
+            threading.Timer(2.0, lambda: run_on_main("hide")).start()
+
+    def _hide_indicator(self):
+        if self.indicator:
+            self.indicator.hide()
+
+    def _quit(self, _):
         if self.hotkey_listener:
             self.hotkey_listener.stop()
+        self.transcriber.close()
         rumps.quit_application()
 
 
