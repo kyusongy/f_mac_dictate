@@ -5,7 +5,7 @@ from AppKit import (
     NSTextField,
     NSFont,
     NSScreen,
-    NSFloatingWindowLevel,
+    NSStatusWindowLevel,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorStationary,
     NSVisualEffectView,
@@ -41,7 +41,7 @@ class Indicator:
             2,  # NSBackingStoreBuffered
             False,
         )
-        self.window.setLevel_(NSFloatingWindowLevel)
+        self.window.setLevel_(NSStatusWindowLevel)
         self.window.setCollectionBehavior_(
             NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehaviorStationary
