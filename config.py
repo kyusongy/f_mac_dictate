@@ -1,5 +1,6 @@
 import os
 import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,7 +10,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "groq")
 HOTKEY = os.getenv("HOTKEY", "alt_r")
 WHISPER_PROMPT = os.getenv("WHISPER_PROMPT", "")
-_DEFAULT_MODELS = {"groq": "whisper-large-v3-turbo", "openai": "whisper-1"}
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "")
+_DEFAULT_MODELS = {"groq": "whisper-large-v3", "openai": "whisper-1"}
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "")
 
 try:
@@ -25,12 +27,25 @@ except ValueError:
     SAMPLE_RATE = 16000
 
 if TRANSCRIPTION_PROVIDER not in ("groq", "openai"):
-    print(f"Warning: unknown TRANSCRIPTION_PROVIDER '{TRANSCRIPTION_PROVIDER}', using groq", file=sys.stderr)
+    print(
+        f"Warning: unknown TRANSCRIPTION_PROVIDER '{TRANSCRIPTION_PROVIDER}', using groq",
+        file=sys.stderr,
+    )
     TRANSCRIPTION_PROVIDER = "groq"
 
 VALID_HOTKEYS = {
-    "alt_r", "alt_l", "alt", "ctrl_r", "ctrl_l", "ctrl",
-    "shift_r", "shift_l", "shift", "cmd_r", "cmd_l", "cmd",
+    "alt_r",
+    "alt_l",
+    "alt",
+    "ctrl_r",
+    "ctrl_l",
+    "ctrl",
+    "shift_r",
+    "shift_l",
+    "shift",
+    "cmd_r",
+    "cmd_l",
+    "cmd",
 }
 if HOTKEY not in VALID_HOTKEYS:
     print(f"Warning: unknown HOTKEY '{HOTKEY}', using alt_r", file=sys.stderr)

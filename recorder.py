@@ -1,11 +1,20 @@
 import io
+import time
 import wave
+
 import numpy as np
 import sounddevice as sd
-from config import SAMPLE_RATE, MIN_DURATION
+
+from config import MIN_DURATION, SAMPLE_RATE
+
+# Key release usually lands before the last syllable finishes.
+TAIL_SECONDS = 0.25
+# ~-40 dBFS. Below this it's room noise, and Whisper hallucinates
+# ("Thank you.", or echoes the prompt) when fed near-silence.
+SILENCE_PEAK = 300
 
 
-class RecordingTooShort(Exception):
+class EmptyRecording(Exception):
     pass
 
 
@@ -31,7 +40,8 @@ class Recorder:
         self.stream.start()
 
     def stop(self) -> bytes:
-        """Stop recording and return WAV bytes. Raises RecordingTooShort if too brief."""
+        """Stop recording and return WAV bytes. Raises EmptyRecording if nothing usable."""
+        time.sleep(TAIL_SECONDS)
         self.recording = False
         if self.stream:
             self.stream.stop()
@@ -39,15 +49,14 @@ class Recorder:
             self.stream = None
 
         if not self.frames:
-            raise RecordingTooShort()
+            raise EmptyRecording("Too short")
 
         audio = np.concatenate(self.frames, axis=0)
-        duration = len(audio) / SAMPLE_RATE
+        if len(audio) / SAMPLE_RATE < MIN_DURATION + TAIL_SECONDS:
+            raise EmptyRecording("Too short")
+        if np.abs(audio.astype(np.int32)).max() < SILENCE_PEAK:
+            raise EmptyRecording("No speech")
 
-        if duration < MIN_DURATION:
-            raise RecordingTooShort()
-
-        # Convert to WAV bytes
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
             wf.setnchannels(1)

@@ -10,7 +10,8 @@ A lightweight voice-to-text dictation tool for macOS using Whisper AI. Hold a ho
 - **Visual feedback**: Floating indicator shows recording/processing/error status
 - **Menu bar app**: Runs quietly in your menu bar with hotkey label
 - **Connection reuse**: Persistent HTTP connections for faster repeat transcriptions
-- **Whisper prompt**: Guide transcription style/vocabulary via `WHISPER_PROMPT`
+- **Whisper prompt**: Bias spelling of jargon (pytest, uv, .env) via `WHISPER_PROMPT`
+- **Retry**: Transient provider errors auto-retry; failed audio is kept for a manual retry
 
 ## Requirements
 
@@ -49,8 +50,17 @@ TRANSCRIPTION_PROVIDER=groq          # "groq" or "openai"
 HOTKEY=alt_r                         # See hotkey options below
 MIN_DURATION=0.5                     # Skip recordings shorter than this (seconds)
 SAMPLE_RATE=16000                    # Audio sample rate
-WHISPER_MODEL=                       # Defaults per provider (whisper-large-v3-turbo / whisper-1)
-WHISPER_PROMPT=                      # Optional prompt to guide transcription
+WHISPER_MODEL=                       # Defaults per provider (whisper-large-v3 / whisper-1)
+WHISPER_LANGUAGE=                    # ISO code, e.g. "en". Empty = auto-detect per clip
+WHISPER_PROMPT=                      # Optional style/vocabulary sample (see below)
+```
+
+`WHISPER_PROMPT` is not an instruction. Whisper treats it as the text spoken just
+before your clip and imitates its style and spelling. Write a sample sentence in
+the style you want, including any names or jargon you use:
+
+```env
+WHISPER_PROMPT="Hey Claude, in main.py, refactor the Transcriber class and retry on a 429 or 503 with backoff. Then run pytest with uv, fix the ruff errors, and update the README. Check the JSON response, the .env config, and the git diff before you commit."
 ```
 
 Invalid config values fall back to defaults with a stderr warning.
@@ -81,7 +91,9 @@ python main.py
 4. Release the key
 5. Text appears at your cursor
 
-Too-short recordings show a brief "Too short" indicator. Transcription errors display in the indicator instead of pasting into your document.
+Too-short or silent recordings show a brief "Too short" / "No speech" indicator instead of being sent.
+
+Timeouts, connection drops, 429s, and 5xx responses are retried automatically (3 attempts with backoff). If all attempts fail, the indicator shows "Failed", the error goes to stderr, and the audio is kept in memory: use **Retry last recording** in the menu bar to resend it once the provider is back.
 
 ## macOS Permissions
 

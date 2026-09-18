@@ -1,43 +1,15 @@
+import sys
 import threading
+
 import rumps
-from AppKit import NSObject
-from recorder import Recorder, RecordingTooShort
-from transcriber import get_transcriber, TranscriptionError
-from output import paste_text, play_success_sound
-from indicator import Indicator
-from hotkey import HotkeyListener
+from PyObjCTools.AppHelper import callAfter, callLater
+
 from config import HOTKEY
-
-
-class Delegate(NSObject):
-    """Bridge to run callbacks on main thread."""
-
-    app = None
-    pending_action = None
-    pending_text = None
-
-    def performAction_(self, _):
-        if self.pending_action == "start":
-            self.app._start_recording()
-        elif self.pending_action == "stop":
-            self.app._stop_recording()
-        elif self.pending_action == "finish":
-            self.app._finish(self.pending_text)
-        elif self.pending_action == "error":
-            self.app._show_error(self.pending_text)
-        elif self.pending_action == "hide":
-            self.app._hide_indicator()
-
-
-delegate = Delegate.alloc().init()
-
-
-def run_on_main(action, text=None):
-    delegate.pending_action = action
-    delegate.pending_text = text
-    delegate.performSelectorOnMainThread_withObject_waitUntilDone_(
-        "performAction:", None, False
-    )
+from hotkey import HotkeyListener
+from indicator import Indicator
+from output import paste_text, play_success_sound
+from recorder import EmptyRecording, Recorder
+from transcriber import TranscriptionError, get_transcriber
 
 
 class DictateApp(rumps.App):
@@ -45,25 +17,32 @@ class DictateApp(rumps.App):
         super().__init__("Dictate", "○", quit_button=None)
         hotkey_item = rumps.MenuItem(f"Hotkey: {HOTKEY}")
         hotkey_item.set_callback(None)
-        self.menu = [hotkey_item, None, rumps.MenuItem("Quit", callback=self._quit)]
+        # Enabled only while a failed recording is held for retry.
+        self.retry_item = rumps.MenuItem("Retry last recording")
+        self.retry_item.set_callback(None)
+        self.menu = [
+            hotkey_item,
+            self.retry_item,
+            None,
+            rumps.MenuItem("Quit", callback=self._quit),
+        ]
         self.recorder = Recorder()
         self.transcriber = get_transcriber()
         self.indicator = None
         self.hotkey_listener = None
         self.processing = False
-        delegate.app = self
+        self.failed_audio = None
 
+    # Hotkey callbacks fire on the listener thread; hop to main for UI work.
     def _on_key_press(self):
-        if self.processing:
-            return
-        run_on_main("start")
+        callAfter(self._start_recording)
 
     def _on_key_release(self):
-        if self.processing:
-            return
-        run_on_main("stop")
+        callAfter(self._stop_recording)
 
     def _start_recording(self):
+        if self.processing:
+            return
         self.title = "●"
         if self.indicator:
             self.indicator.set_text("Recording")
@@ -71,30 +50,47 @@ class DictateApp(rumps.App):
         self.recorder.start()
 
     def _stop_recording(self):
+        # Release can arrive for a press that was ignored mid-processing;
+        # without this guard the previous clip's frames get re-transcribed.
+        if self.processing or not self.recorder.recording:
+            return
         self.processing = True
         if self.indicator:
             self.indicator.set_text("Processing")
+        threading.Thread(target=self._record_and_transcribe, daemon=True).start()
 
+    def _retry(self, _):
+        if self.processing or self.failed_audio is None:
+            return
+        self.processing = True
+        if self.indicator:
+            self.indicator.set_text("Retrying")
+            self.indicator.show()
+        threading.Thread(
+            target=self._transcribe, args=(self.failed_audio,), daemon=True
+        ).start()
+
+    def _record_and_transcribe(self):
         try:
             audio = self.recorder.stop()
-        except RecordingTooShort:
-            self.title = "○"
-            self.processing = False
-            if self.indicator:
-                self.indicator.set_text("Too short", color="yellow")
-                threading.Timer(1.5, lambda: run_on_main("hide")).start()
+        except EmptyRecording as e:
+            callAfter(self._skip, str(e))
             return
+        self._transcribe(audio)
 
-        def transcribe_and_paste():
-            try:
-                text = self.transcriber.transcribe(audio)
-                run_on_main("finish", text)
-            except TranscriptionError as e:
-                run_on_main("error", str(e))
+    def _transcribe(self, audio: bytes):
+        try:
+            text = self.transcriber.transcribe(audio)
+        except TranscriptionError as e:
+            callAfter(self._fail, audio, str(e))
+            return
+        callAfter(self._finish, text, audio)
 
-        threading.Thread(target=transcribe_and_paste, daemon=True).start()
-
-    def _finish(self, text: str):
+    def _finish(self, text: str, audio: bytes):
+        # A newer successful clip must not discard a still-unsent failed one.
+        if audio is self.failed_audio:
+            self.failed_audio = None
+            self.retry_item.set_callback(None)
         self.title = "○"
         if self.indicator:
             self.indicator.hide()
@@ -104,13 +100,24 @@ class DictateApp(rumps.App):
             play_success_sound()
         self.processing = False
 
-    def _show_error(self, message: str):
+    def _skip(self, reason: str):
         self.title = "○"
         self.processing = False
         if self.indicator:
-            self.indicator.set_text(message, color="yellow")
+            self.indicator.set_text(reason, color="yellow")
+            callLater(1.5, self._hide_indicator)
+
+    def _fail(self, audio: bytes, message: str):
+        print(f"Transcription failed: {message}", file=sys.stderr)
+        self.failed_audio = audio
+        self.retry_item.set_callback(self._retry)
+        self.title = "○"
+        self.processing = False
+        if self.indicator:
+            # Full error goes to stderr; the pill only fits a word or two.
+            self.indicator.set_text("Failed", color="yellow")
             self.indicator.show()
-            threading.Timer(2.0, lambda: run_on_main("hide")).start()
+            callLater(2.0, self._hide_indicator)
 
     def _hide_indicator(self):
         if self.indicator:
