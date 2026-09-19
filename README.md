@@ -63,6 +63,11 @@ the style you want, including any names or jargon you use:
 WHISPER_PROMPT="Hey Claude, in main.py, refactor the Transcriber class and retry on a 429 or 503 with backoff. Then run pytest with uv, fix the ruff errors, and update the README. Check the JSON response, the .env config, and the git diff before you commit."
 ```
 
+If you mix in another language, put only its nouns inside English sentences
+(e.g. `...grabbing 火锅 with the team`). Full clauses in the other language teach
+Whisper to append a translation after your English sentences. Leave
+`WHISPER_LANGUAGE` empty. It only accepts one language.
+
 Invalid config values fall back to defaults with a stderr warning.
 
 ### Hotkey Options
