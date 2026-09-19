@@ -18,18 +18,28 @@ class EmptyRecording(Exception):
     pass
 
 
+def _level(block: np.ndarray) -> float:
+    # Map -55..-10 dBFS onto 0..1: room noise sits near 0, normal speech ~0.5-0.8.
+    rms = np.sqrt(np.mean(np.square(block, dtype=np.float32))) / 32768
+    db = 20 * np.log10(max(float(rms), 1e-6))
+    return min(1.0, max(0.0, (db + 55) / 45))
+
+
 class Recorder:
     def __init__(self):
         self.frames = []
         self.stream = None
         self.recording = False
+        self.level = 0.0  # latest mic level, 0..1, for the waveform
 
     def _callback(self, indata, frames, time, status):
         if self.recording:
             self.frames.append(indata.copy())
+            self.level = _level(indata)
 
     def start(self):
         self.frames = []
+        self.level = 0.0
         self.recording = True
         self.stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
@@ -43,10 +53,7 @@ class Recorder:
         """Stop recording and return WAV bytes. Raises EmptyRecording if nothing usable."""
         time.sleep(TAIL_SECONDS)
         self.recording = False
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-            self.stream = None
+        self._close()
 
         if not self.frames:
             raise EmptyRecording("Too short")
@@ -65,3 +72,14 @@ class Recorder:
             wf.writeframes(audio.tobytes())
 
         return buf.getvalue()
+
+    def cancel(self):
+        self.recording = False
+        self._close()
+        self.frames = []
+
+    def _close(self):
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None

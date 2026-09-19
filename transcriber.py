@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 
 import httpx
 
@@ -31,13 +32,16 @@ class Transcriber:
             timeout=30,
         )
 
-    def transcribe(self, audio_bytes: bytes) -> str:
+    def transcribe(
+        self, audio_bytes: bytes, on_retry: Callable[[], None] = lambda: None
+    ) -> str:
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 return self._post(audio_bytes)
             except Exception as e:
                 if attempt == ATTEMPTS or not _transient(e):
                     raise TranscriptionError(_describe(e)) from e
+                on_retry()
                 time.sleep(attempt)
 
     def _post(self, audio_bytes: bytes) -> str:

@@ -1,8 +1,9 @@
 import sys
 import threading
+import time
 
 import rumps
-from PyObjCTools.AppHelper import callAfter, callLater
+from PyObjCTools.AppHelper import callAfter
 
 from config import HOTKEY
 from hotkey import HotkeyListener
@@ -10,6 +11,10 @@ from indicator import Indicator
 from output import paste_text, play_success_sound
 from recorder import EmptyRecording, Recorder
 from transcriber import TranscriptionError, get_transcriber
+
+# Releasing sooner than this is a tap: recording continues until the next tap.
+# Longer is push-to-talk: release stops.
+TAP_SECONDS = 0.3
 
 
 class DictateApp(rumps.App):
@@ -28,44 +33,64 @@ class DictateApp(rumps.App):
         ]
         self.recorder = Recorder()
         self.transcriber = get_transcriber()
-        self.indicator = None
+        self.indicator = Indicator(lambda: self.recorder.level)
         self.hotkey_listener = None
         self.processing = False
         self.failed_audio = None
+        self.mode = "idle"  # idle | holding | latched
+        self.pressed_at = 0.0
 
     # Hotkey callbacks fire on the listener thread; hop to main for UI work.
     def _on_key_press(self):
-        callAfter(self._start_recording)
+        callAfter(self._key_down)
 
     def _on_key_release(self):
-        callAfter(self._stop_recording)
+        callAfter(self._key_up)
+
+    def _on_chord(self):
+        callAfter(self._chord)
+
+    def _key_down(self):
+        if self.mode == "latched":
+            self.mode = "idle"
+            self._stop_recording()
+        elif self.mode == "idle" and not self.processing:
+            self.mode = "holding"
+            self.pressed_at = time.monotonic()
+            self._start_recording()
+
+    def _key_up(self):
+        if self.mode != "holding":
+            return
+        if time.monotonic() - self.pressed_at < TAP_SECONDS:
+            self.mode = "latched"
+            self.indicator.recording(hands_free=True)
+        else:
+            self.mode = "idle"
+            self._stop_recording()
+
+    def _chord(self):
+        if self.mode == "holding":
+            self.mode = "idle"
+            self.recorder.cancel()
+            self.title = "○"
+            self.indicator.hide()
 
     def _start_recording(self):
-        if self.processing:
-            return
         self.title = "●"
-        if self.indicator:
-            self.indicator.set_text("Recording")
-            self.indicator.show()
+        self.indicator.recording(hands_free=False)
         self.recorder.start()
 
     def _stop_recording(self):
-        # Release can arrive for a press that was ignored mid-processing;
-        # without this guard the previous clip's frames get re-transcribed.
-        if self.processing or not self.recorder.recording:
-            return
         self.processing = True
-        if self.indicator:
-            self.indicator.set_text("Processing")
+        self.indicator.processing()
         threading.Thread(target=self._record_and_transcribe, daemon=True).start()
 
     def _retry(self, _):
-        if self.processing or self.failed_audio is None:
+        if self.processing or self.mode != "idle" or self.failed_audio is None:
             return
         self.processing = True
-        if self.indicator:
-            self.indicator.set_text("Retrying")
-            self.indicator.show()
+        self.indicator.processing()
         threading.Thread(
             target=self._transcribe, args=(self.failed_audio,), daemon=True
         ).start()
@@ -80,7 +105,9 @@ class DictateApp(rumps.App):
 
     def _transcribe(self, audio: bytes):
         try:
-            text = self.transcriber.transcribe(audio)
+            text = self.transcriber.transcribe(
+                audio, on_retry=lambda: callAfter(self.indicator.processing, "Retrying")
+            )
         except TranscriptionError as e:
             callAfter(self._fail, audio, str(e))
             return
@@ -92,20 +119,19 @@ class DictateApp(rumps.App):
             self.failed_audio = None
             self.retry_item.set_callback(None)
         self.title = "○"
-        if self.indicator:
-            self.indicator.hide()
         text = text.strip() if text else ""
         if text:
             paste_text(text)
             play_success_sound()
+            self.indicator.done()
+        else:
+            self.indicator.hide()
         self.processing = False
 
     def _skip(self, reason: str):
         self.title = "○"
         self.processing = False
-        if self.indicator:
-            self.indicator.set_text(reason, color="yellow")
-            callLater(1.5, self._hide_indicator)
+        self.indicator.notice(reason)
 
     def _fail(self, audio: bytes, message: str):
         print(f"Transcription failed: {message}", file=sys.stderr)
@@ -113,15 +139,8 @@ class DictateApp(rumps.App):
         self.retry_item.set_callback(self._retry)
         self.title = "○"
         self.processing = False
-        if self.indicator:
-            # Full error goes to stderr; the pill only fits a word or two.
-            self.indicator.set_text("Failed", color="yellow")
-            self.indicator.show()
-            callLater(2.0, self._hide_indicator)
-
-    def _hide_indicator(self):
-        if self.indicator:
-            self.indicator.hide()
+        # Full error goes to stderr; the pill offers a one-click retry.
+        self.indicator.failed(on_retry=lambda: self._retry(None))
 
     def _quit(self, _):
         if self.hotkey_listener:
@@ -132,8 +151,9 @@ class DictateApp(rumps.App):
 
 def main():
     app = DictateApp()
-    app.indicator = Indicator()
-    app.hotkey_listener = HotkeyListener(app._on_key_press, app._on_key_release)
+    app.hotkey_listener = HotkeyListener(
+        app._on_key_press, app._on_key_release, app._on_chord
+    )
     app.hotkey_listener.start()
     app.run()
 

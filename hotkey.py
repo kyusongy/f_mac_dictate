@@ -1,4 +1,5 @@
 from pynput import keyboard
+
 from config import HOTKEY
 
 # Map config strings to pynput keys
@@ -19,15 +20,21 @@ KEY_MAP = {
 
 
 class HotkeyListener:
-    def __init__(self, on_press, on_release):
+    def __init__(self, on_press, on_release, on_chord):
         self.on_press_callback = on_press
         self.on_release_callback = on_release
+        self.on_chord_callback = on_chord
         self.target_key = KEY_MAP.get(HOTKEY, keyboard.Key.alt_r)
         self.pressed = False
         self.listener = None
 
     def _on_press(self, key):
-        if key == self.target_key and not self.pressed:
+        if key != self.target_key:
+            # Another key while ours is down is a shortcut (Option+Arrow), not dictation.
+            if self.pressed:
+                self.on_chord_callback()
+            return
+        if not self.pressed:
             self.pressed = True
             self.on_press_callback()
 

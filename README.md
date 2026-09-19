@@ -4,7 +4,7 @@ A lightweight voice-to-text dictation tool for macOS using Whisper AI. Hold a ho
 
 ## Features
 
-- **Hold-to-talk**: Hold a key to record, release to transcribe
+- **Hold or tap**: Hold the hotkey and release to transcribe, or tap once to start and tap again to stop
 - **Fast transcription**: Uses Groq's Whisper API or OpenAI
 - **Works everywhere**: Pastes text into any app with a text field
 - **Visual feedback**: Floating indicator shows recording/processing/error status
@@ -91,9 +91,16 @@ python main.py
 4. Release the key
 5. Text appears at your cursor
 
+For longer dictation, tap the hotkey instead (release within 0.3s): recording
+continues hands-free until you tap again. Pressing any other key while holding
+the hotkey (e.g. Option+Arrow) cancels the recording, so modifier shortcuts
+don't trigger dictation.
+
+The indicator appears on whichever display the mouse cursor is on.
+
 Too-short or silent recordings show a brief "Too short" / "No speech" indicator instead of being sent.
 
-Timeouts, connection drops, 429s, and 5xx responses are retried automatically (3 attempts with backoff). If all attempts fail, the indicator shows "Failed", the error goes to stderr, and the audio is kept in memory: use **Retry last recording** in the menu bar to resend it once the provider is back.
+Timeouts, connection drops, 429s, and 5xx responses are retried automatically (3 attempts with backoff). While those run, the pill shows "Retrying". If all attempts fail, the pill shows "Couldn't transcribe" with a **Retry** button for 10 seconds (clicking it doesn't steal focus from your text field), the error goes to stderr, and the audio stays in memory. **Retry last recording** in the menu bar works as a fallback after the pill is gone.
 
 ## macOS Permissions
 
@@ -112,7 +119,8 @@ f_mac_dictate/
 ├── recorder.py      # Audio capture
 ├── transcriber.py   # Whisper API client (persistent connections)
 ├── output.py        # Clipboard + paste simulation
-├── indicator.py     # Floating status window
+├── indicator.py     # Floating status pill (non-activating panel)
+├── waveform.py      # Live mic-level bars drawn in the pill
 ├── config.py        # Environment config loader + validation
 ├── Makefile         # Install, run, bundle, launchagent targets
 ├── setup.py         # py2app bundle config

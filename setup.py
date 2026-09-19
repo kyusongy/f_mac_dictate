@@ -13,6 +13,7 @@ OPTIONS = {
         "transcriber",
         "output",
         "indicator",
+        "waveform",
         "hotkey",
     ],
     "packages": [
