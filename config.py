@@ -13,6 +13,9 @@ WHISPER_PROMPT = os.getenv("WHISPER_PROMPT", "")
 WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "")
 _DEFAULT_MODELS = {"groq": "whisper-large-v3", "openai": "whisper-1"}
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "")
+# Groq chat model that punctuates transcripts and fixes obvious misrecognitions.
+# Empty disables.
+CLEANUP_MODEL = os.getenv("CLEANUP_MODEL", "qwen/qwen3.8-27b")
 
 try:
     MIN_DURATION = float(os.getenv("MIN_DURATION", "0.5"))

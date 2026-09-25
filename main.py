@@ -5,7 +5,8 @@ import time
 import rumps
 from PyObjCTools.AppHelper import callAfter
 
-from config import HOTKEY
+from cleanup import Cleaner
+from config import HOTKEY, TRANSCRIPTION_PROVIDER
 from hotkey import HotkeyListener
 from indicator import Indicator
 from output import paste_text, play_success_sound
@@ -33,6 +34,9 @@ class DictateApp(rumps.App):
         ]
         self.recorder = Recorder()
         self.transcriber = get_transcriber()
+        self.cleaner = Cleaner(
+            self.transcriber.client if TRANSCRIPTION_PROVIDER == "groq" else None
+        )
         self.indicator = Indicator(lambda: self.recorder.level)
         self.hotkey_listener = None
         self.processing = False
@@ -111,7 +115,7 @@ class DictateApp(rumps.App):
         except TranscriptionError as e:
             callAfter(self._fail, audio, str(e))
             return
-        callAfter(self._finish, text, audio)
+        callAfter(self._finish, self.cleaner.fix(text), audio)
 
     def _finish(self, text: str, audio: bytes):
         # A newer successful clip must not discard a still-unsent failed one.
@@ -145,6 +149,7 @@ class DictateApp(rumps.App):
     def _quit(self, _):
         if self.hotkey_listener:
             self.hotkey_listener.stop()
+        self.cleaner.close()
         self.transcriber.close()
         rumps.quit_application()
 

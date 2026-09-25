@@ -12,6 +12,7 @@ A lightweight voice-to-text dictation tool for macOS using Whisper AI. Hold a ho
 - **Connection reuse**: Persistent HTTP connections for faster repeat transcriptions
 - **Whisper prompt**: Bias spelling of jargon (pytest, uv, .env) via `WHISPER_PROMPT`
 - **Retry**: Transient provider errors auto-retry; failed audio is kept for a manual retry
+- **Cleanup pass**: A fast Groq LLM punctuates Chinese and fixes obvious misrecognitions
 
 ## Requirements
 
@@ -53,6 +54,7 @@ SAMPLE_RATE=16000                    # Audio sample rate
 WHISPER_MODEL=                       # Defaults per provider (whisper-large-v3 / whisper-1)
 WHISPER_LANGUAGE=                    # ISO code, e.g. "en". Empty = auto-detect per clip
 WHISPER_PROMPT=                      # Optional style/vocabulary sample (see below)
+CLEANUP_MODEL=qwen/qwen3.8-27b       # Groq model for the cleanup pass. Empty = off
 ```
 
 `WHISPER_PROMPT` is not an instruction. Whisper treats it as the text spoken just
@@ -67,6 +69,15 @@ If you mix in another language, put only its nouns inside English sentences
 (e.g. `...grabbing 火锅 with the team`). Full clauses in the other language teach
 Whisper to append a translation after your English sentences. Leave
 `WHISPER_LANGUAGE` empty. It only accepts one language.
+
+Don't try to fix missing Chinese punctuation with the prompt. Whisper only
+punctuates Chinese where you pause, and a punctuated Chinese prompt makes it
+copy that punctuation everywhere. Every transcript instead goes through
+`CLEANUP_MODEL` (Groq, ~0.1-0.3s extra). It adds punctuation and fixes obvious
+misrecognitions: wrong homophones (需要在讨论 → 需要再讨论), English terms
+transcribed by sound (派森 → Python), and misheard words (pie test → pytest).
+It may only swap short spans for a word or two. If it rephrases, drops or adds
+words, answers the dictation, or the call fails, the raw transcript is pasted.
 
 Invalid config values fall back to defaults with a stderr warning.
 

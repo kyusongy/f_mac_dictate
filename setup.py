@@ -11,6 +11,7 @@ OPTIONS = {
         "config",
         "recorder",
         "transcriber",
+        "cleanup",
         "output",
         "indicator",
         "waveform",
